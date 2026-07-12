@@ -18,6 +18,40 @@ It builds a directed dependency graph with NetworkX, resolves direct and transit
 
 ## Install
 
+### Recommended: install the CLI with pipx
+
+`pipx` installs command-line applications in their own isolated Python environments, avoiding conflicts with system or project packages.
+
+Fedora:
+
+```bash
+sudo dnf install pipx
+pipx ensurepath
+```
+
+If `pipx` is unavailable through your package manager:
+
+```bash
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath
+```
+
+Open a new terminal after `ensurepath`, then install directly from GitHub:
+
+```bash
+pipx install "git+https://github.com/OWNER/REPOSITORY.git"
+sbom-risk --help
+```
+
+Update or remove it later with:
+
+```bash
+pipx upgrade sbom-risk-analyzer
+pipx uninstall sbom-risk-analyzer
+```
+
+### Development installation
+
 ```bash
 git clone <repository-url>
 cd sbom-risk-analyzer
@@ -25,6 +59,14 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
+```
+
+The editable installation is for contributors: source-code changes take effect without reinstalling. It is best kept inside the `.venv` rather than installed into the system Python environment.
+
+Windows PowerShell activation for the development environment is:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
 For development and tests:
