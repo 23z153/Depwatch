@@ -3,8 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 SUPPORTED = {
-    "package-lock.json", "npm-shrinkwrap.json", "package.json", "requirements.txt",
-    "poetry.lock", "pyproject.toml", "Pipfile.lock", "pom.xml", "go.mod", "Cargo.lock",
+    "package-lock.json", "npm-shrinkwrap.json", "package.json",
+    "yarn.lock",
+    "requirements.txt",
+    "poetry.lock", "pyproject.toml", "Pipfile.lock",
+    "pom.xml", "go.mod", "Cargo.lock",
+    "Gemfile.lock", "Gemfile",
+    "composer.lock", "composer.json",
 }
 
 # A resolved lockfile is authoritative for the package manager it belongs to.
@@ -13,15 +18,26 @@ SUPPORTED = {
 LOCKFILE_MANIFESTS = {
     "package-lock.json": {"package.json"},
     "npm-shrinkwrap.json": {"package.json"},
+    # yarn.lock is authoritative over package.json for npm projects.
+    "yarn.lock": {"package.json"},
     "poetry.lock": {"pyproject.toml"},
     "Pipfile.lock": set(),
     "Cargo.lock": set(),
+    # Gemfile.lock is authoritative over the bare Gemfile.
+    "Gemfile.lock": {"Gemfile"},
+    # composer.lock is authoritative over composer.json.
+    "composer.lock": {"composer.json"},
 }
 
 
 def discover_inputs(project: Path) -> list[Path]:
     """Return manifests/SBOMs below a project, skipping common generated directories."""
     if project.is_file():
+        for lockfile_name, suppressed_set in LOCKFILE_MANIFESTS.items():
+            if project.name in suppressed_set:
+                lockfile_path = project.parent / lockfile_name
+                if lockfile_path.is_file():
+                    return [lockfile_path]
         return [project]
     found: list[Path] = []
     ignored = {".git", "node_modules", "vendor", ".venv", "venv", "dist", "build"}

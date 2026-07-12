@@ -474,3 +474,67 @@ def test_online_osv_api_mocked(tmp_path, monkeypatch):
     assert qs_vuln.cvss == 7.5                        # GHSA_SEV_MAP["high"] = 7.5
     assert qs_vuln.fixed_version == "6.5.3"
     assert qs_vuln.affected_range == "<6.5.3"
+
+
+def test_npm_dev_dependencies_and_lockfile_redirection(tmp_path):
+    # Setup dummy project with package.json and package-lock.json
+    (tmp_path / "package.json").write_text(json.dumps({
+        "name": "test-project",
+        "version": "1.0.0",
+        "devDependencies": {
+            "jest": "^27.0.0"
+        }
+    }))
+    (tmp_path / "package-lock.json").write_text(json.dumps({
+        "name": "test-project",
+        "version": "1.0.0",
+        "lockfileVersion": 3,
+        "packages": {
+            "": {
+                "name": "test-project",
+                "version": "1.0.0",
+                "devDependencies": {
+                    "jest": "^27.0.0"
+                }
+            },
+            "node_modules/jest": {
+                "version": "27.0.0",
+                "dependencies": {
+                    "dep-of-jest": "^2.0.0"
+                }
+            },
+            "node_modules/dep-of-jest": {
+                "version": "2.0.0"
+            }
+        }
+    }))
+
+    # 1. Test lockfile redirection: discover_inputs on package.json should return package-lock.json
+    inputs = discover_inputs(tmp_path / "package.json")
+    assert len(inputs) == 1
+    assert inputs[0].name == "package-lock.json"
+
+    # 2. Test devDependencies are marked direct and have ROOT edges
+    result = analyze(tmp_path)
+    jest_comp = next((c for c in result.components if c.name == "jest"), None)
+    assert jest_comp is not None
+    assert jest_comp.direct is True
+    assert ("ROOT", "npm:jest@27.0.0") in result.edges
+    assert ("npm:jest@27.0.0", "npm:dep-of-jest@2.0.0") in result.edges
+
+    # 3. Test ensure_sbom writes metadata.component and transitive dependency nodes
+    sbom_path, generated = ensure_sbom(tmp_path / "package.json", "cyclonedx")
+    assert generated
+    sbom_data = json.loads(sbom_path.read_text())
+    assert sbom_data["metadata"]["component"]["bom-ref"] == "ROOT"
+    
+    # Verify the dependencies section includes transitives
+    dep_nodes = sbom_data["dependencies"]
+    root_node = next((d for d in dep_nodes if d["ref"] == "ROOT"), None)
+    assert root_node is not None
+    assert "npm:jest@27.0.0" in root_node["dependsOn"]
+
+    jest_node = next((d for d in dep_nodes if d["ref"] == "npm:jest@27.0.0"), None)
+    assert jest_node is not None
+    assert "npm:dep-of-jest@2.0.0" in jest_node["dependsOn"]
+

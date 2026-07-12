@@ -70,7 +70,15 @@ def _collect(project: Path) -> tuple[dict[str, Component], list[tuple[str, str]]
 def _cyclonedx(project: Path, components: dict[str, Component], edges: list[tuple[str, str]]) -> dict:
     return {
         "bomFormat": "CycloneDX", "specVersion": "1.5", "serialNumber": f"urn:uuid:sbom-risk-{project.name}", "version": 1,
-        "metadata": {"timestamp": datetime.now(timezone.utc).isoformat(), "tools": [{"vendor": "sbom-risk", "name": "SBOM Risk Analyzer"}]},
+        "metadata": {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "tools": [{"vendor": "sbom-risk", "name": "SBOM Risk Analyzer"}],
+            "component": {
+                "bom-ref": "ROOT",
+                "type": "application",
+                "name": project.name,
+            }
+        },
         "components": [_cdx_component(component) for component in sorted(components.values(), key=lambda c: c.key)],
         "dependencies": [{"ref": source, "dependsOn": sorted(target for parent, target in edges if parent == source)}
                          for source in sorted({parent for parent, _ in edges})],
