@@ -1,0 +1,20 @@
+[
+  {
+    "id": "CVE-2022-24999", "ecosystem": "npm", "package": "axios",
+    "affected": "<0.21.2", "severity": "high",
+    "summary": "Axios vulnerable to regular expression denial of service.",
+    "fixed_version": "0.21.2", "references": ["https://github.com/advisories/GHSA-cph5-m8f7-6c5x"]
+  },
+  {
+    "id": "CVE-2022-40897", "ecosystem": "pypi", "package": "setuptools",
+    "affected": "<65.5.1", "severity": "high",
+    "summary": "Setuptools vulnerable to path traversal in package index links.",
+    "fixed_version": "65.5.1", "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-40897"]
+  },
+  {
+    "id": "CVE-2021-23337", "ecosystem": "npm", "package": "lodash",
+    "affected": "<4.17.21", "severity": "high",
+    "summary": "Lodash vulnerable to command injection through template.",
+    "fixed_version": "4.17.21", "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-23337"]
+  }
+]

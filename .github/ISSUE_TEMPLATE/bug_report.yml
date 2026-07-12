@@ -1,0 +1,34 @@
+name: Bug report
+description: Report incorrect analysis, parsing, scoring, or CLI behavior.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include private source code, credentials, or private SBOMs."
+  - type: input
+    id: version
+    attributes:
+      label: SBOM Risk Analyzer version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command run
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized output
+    validations:
+      required: true

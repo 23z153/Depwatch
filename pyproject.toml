@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sbom-risk-analyzer"
+version = "0.1.0"
+description = "A dependency and SBOM risk analyzer CLI"
+requires-python = ">=3.10"
+dependencies = ["networkx>=3.0", "packaging>=23.0"]
+
+[project.scripts]
+sbom-risk = "sbom_risk.cli:main"
+
+[tool.setuptools]
+packages = ["sbom_risk", "sbom_risk.data"]
+
+[tool.setuptools.package-data]
+sbom_risk = ["data/*.json"]
