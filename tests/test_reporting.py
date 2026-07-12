@@ -13,4 +13,4 @@ def test_terminal_report_groups_component_advisories():
     report = terminal_report(result, show_tree=False)
     assert "2 advisories" in report
     assert report.count("• GHSA-39pv") == 1
-    assert "Recommended fix: upgrade to 22.0.1" in report
+    assert "Recommended    upgrade to 22.0.1" in report

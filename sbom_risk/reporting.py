@@ -16,56 +16,58 @@ def terminal_report(result: AnalysisResult, show_tree: bool = True) -> str:
     data = result.to_dict()["summary"]
     unique_advisories = {(f.component, f.finding_id) for f in result.vulnerabilities}
     vulnerable_components = {f.component for f in result.vulnerabilities}
-    lines = [f"SBOM Risk Analyzer — {result.project}", "=" * 72,
-             f"Components: {data['components']} | Edges: {data['dependencies']}",
-             f"Advisories: {len(unique_advisories)} across {len(vulnerable_components)} vulnerable components | License findings: {data['license_conflicts']} | Unmaintained: {data['unmaintained']} | Version conflicts: {data.get('version_conflicts', 0)}"]
+    lines = ["╭──────────────────────── SBOM RISK ANALYZER ────────────────────────╮",
+             f"│ Project    {result.project}",
+             f"│ Inventory  {data['components']} components · {data['dependencies']} dependency edges",
+             f"│ Findings   {len(unique_advisories)} advisories across {len(vulnerable_components)} components · {data['license_conflicts']} license · {data['unmaintained']} maintenance · {data.get('version_conflicts', 0)} conflicts",
+             "╰────────────────────────────────────────────────────────────────────╯"]
     if result.score_breakdown:
-        lines.extend(["", "Score contributors (attributed points):"])
+        lines.extend(_section("Score contributors · attributed points"))
         labels = {"vulnerabilities": "Vulnerabilities", "reachability": "Reachable exposure", "maintenance": "Maintenance & package health", "license": "License policy", "dependency_conflicts": "Dependency conflicts"}
-        lines.extend(f"  +{value:>4.1f}  {labels.get(key, key)}" for key, value in sorted(result.score_breakdown.items(), key=lambda item: (-item[1], item[0])))
+        lines.extend(f"  +{value:>5.1f}  {labels.get(key, key)}" for key, value in sorted(result.score_breakdown.items(), key=lambda item: (-item[1], item[0])))
     active_vulns = [f for f in result.vulnerabilities if f.exploitability != "suppressed"]
     suppressed_vulns = [f for f in result.vulnerabilities if f.exploitability == "suppressed"]
     groups = _vulnerability_groups(active_vulns, result)
     if show_tree:
         if groups:
-            lines.extend(["", "Dependency paths to vulnerable components:"])
+            lines.extend(_section("Dependency paths to vulnerable components"))
             for group in groups:
                 lines.extend(_vulnerability_path_tree(group))
         else:
-            lines.extend(["", "Dependency tree:"] + _tree(result))
+            lines.extend(_section("Dependency tree") + _tree(result))
     if result.vulnerabilities:
-        lines.extend(["", "Vulnerable components (highest priority first):"])
+        lines.extend(_section("Vulnerable components · highest priority first"))
         for group in groups:
             title = _short(group["component"])
-            lines.extend([f"  {title}", f"  {'─' * min(68, max(12, len(title)))}"])
-            lines.append(f"  {len(group['findings'])} advisories | Highest severity: {group['severity'].upper()} | Highest CVSS: {group['cvss']:.1f}" if group["cvss"] is not None else f"  {len(group['findings'])} advisories | Highest severity: {group['severity'].upper()}")
+            cvss = f" · CVSS {group['cvss']:.1f}" if group["cvss"] is not None else ""
+            lines.extend([f"  {_severity_badge(group['severity'])} {title}", f"  {'─' * min(68, max(18, len(title) + 14))}"])
+            lines.append(f"  {len(group['findings'])} advisories{cvss}")
             for finding in group["findings"]:
-                lines.append(f"  • {finding.finding_id}")
-            lines.append(f"  Affected version: {group['version']}")
-            lines.append(f"  Reachability: {group['reachability'].replace('_', ' ').title()}")
-            lines.append(f"  Recommended fix: upgrade to {group['fixed_version']}" if group["fixed_version"] else "  Recommended fix: no patch available")
+                lines.append(f"    • {finding.finding_id}")
+            lines.append(f"  Installed      {group['version']}")
+            lines.append(f"  Reachability   {group['reachability'].replace('_', ' ').title()}")
+            lines.append(f"  Recommended    upgrade to {group['fixed_version']}" if group["fixed_version"] else "  Recommended    ⚠ manual remediation required (no patch available)")
             if group["path"]:
-                lines.append(f"  Path: {group['path']}")
+                lines.append(f"  Dependency path  {group['path']}")
         if suppressed_vulns:
             lines.extend(["", f"  {len(suppressed_vulns)} finding(s) suppressed via VEX:"])
             for f in suppressed_vulns:
                 lines.append(f"    [SUPPRESSED] {f.finding_id}: {_short(f.component)} — {f.summary}")
     other = result.license_conflicts + result.unmaintained
     if other:
-        lines.extend(["", "Policy & maintenance findings:"])
-        lines.extend(f"  [{f.severity.upper()}] {_short(f.component)}: {f.summary}" for f in sorted(other, key=lambda x: (x.component, x.finding_id)))
+        lines.extend(_section("Policy and maintenance findings"))
+        lines.extend(f"  {_severity_badge(f.severity)} {_short(f.component)}\n    {f.summary}" for f in sorted(other, key=lambda x: (x.component, x.finding_id)))
     if result.version_conflicts:
-        lines.extend(["", "Dependency version conflicts:"])
+        lines.extend(_section("Dependency version conflicts"))
         for name, versions in _conflict_groups(result.version_conflicts).items():
-            lines.append(f"  {name}")
-            lines.append("  Versions detected: " + ", ".join(sorted(versions, key=_version_key)))
+            lines.append(f"  {name}  →  " + ", ".join(sorted(versions, key=_version_key)))
     manual = [group for group in groups if not group["fixed_version"]]
     if manual:
-        lines.extend(["", "⚠ Packages requiring manual remediation:"])
+        lines.extend(_section("⚠ Packages requiring manual remediation"))
         for group in manual:
-            lines.append(f"  {group['component']} — {group['severity'].upper()}, no patch available")
+            lines.append(f"  {_severity_badge(group['severity'])} {group['component']}  ·  no patch available")
     if result.component_scores:
-        lines.extend(["", "Prioritized remediation (score/100):"])
+        lines.extend(_section("Prioritized remediation · score / 100"))
         group_by_component = {group["component"]: group for group in groups}
         def priority(item):
             key, score = item; group = group_by_component.get(key)
@@ -75,8 +77,9 @@ def terminal_report(result: AnalysisResult, show_tree: bool = True) -> str:
             top_cvss = f"  top CVSS {max((f.cvss for f in comp_vulns if f.cvss is not None), default=0.0):.1f}" if comp_vulns else ""
             fix_state = "  ⚠ no patch" if key in group_by_component and not group_by_component[key]["fixed_version"] else ""
             lines.append(f"  {score:>5.1f}  {_short(key)}{top_cvss}{fix_state}")
-    if result.parse_warnings: lines.extend(["", "Warnings:"] + [f"  {w}" for w in result.parse_warnings])
-    lines.extend(["", "=" * 72, f"Overall Threat Score: {data['risk_score']}/100 — {_threat_level(data['risk_score'])}"])
+    if result.parse_warnings: lines.extend(_section("Warnings") + [f"  ⚠ {w}" for w in result.parse_warnings])
+    level = _threat_level(data["risk_score"])
+    lines.extend(["", "╔══════════════════════ OVERALL THREAT SCORE ══════════════════════╗", f"║  {data['risk_score']:>5.1f} / 100   ·   {level:<48}║", "╚════════════════════════════════════════════════════════════════════╝"])
     return "\n".join(lines)
 
 
@@ -102,6 +105,14 @@ def _tree(result: AnalysisResult) -> list[str]:
 
 
 def _short(value: str) -> str: return value[8:] if value.startswith("generic:") else value
+
+
+def _section(title: str) -> list[str]:
+    return ["", f"── {title} " + "─" * max(0, 68 - len(title))]
+
+
+def _severity_badge(severity: str) -> str:
+    return f"[{severity.upper():9}]"
 
 
 def _vulnerability_path_tree(group: dict) -> list[str]:
