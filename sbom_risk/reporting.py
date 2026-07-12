@@ -16,11 +16,16 @@ def terminal_report(result: AnalysisResult, show_tree: bool = True) -> str:
     data = result.to_dict()["summary"]
     unique_advisories = {(f.component, f.finding_id) for f in result.vulnerabilities}
     vulnerable_components = {f.component for f in result.vulnerabilities}
-    lines = ["╭──────────────────────── SBOM RISK ANALYZER ────────────────────────╮",
-             f"│ Project    {result.project}",
-             f"│ Inventory  {data['components']} components · {data['dependencies']} dependency edges",
-             f"│ Findings   {len(unique_advisories)} advisories across {len(vulnerable_components)} components · {data['license_conflicts']} license · {data['unmaintained']} maintenance · {data.get('version_conflicts', 0)} conflicts",
-             "╰────────────────────────────────────────────────────────────────────╯"]
+    inventory_line = f" Inventory: {data['components']} components · {data['dependencies']} dependency edges"
+    findings_line = (f" Findings: {len(unique_advisories)} advisories / {len(vulnerable_components)} components / "
+                     f"{data['license_conflicts']} license / {data['unmaintained']} maintenance / "
+                     f"{data.get('version_conflicts', 0)} conflicts")
+    border = "+" + "-" * 68 + "+"
+    lines = [border,
+             f"|{_fit(f' SBOM RISK ANALYZER  |  Project: {result.project}', 68):<68}|",
+             f"|{_fit(inventory_line, 68):<68}|",
+             f"|{_fit(findings_line, 68):<68}|",
+             border]
     if result.score_breakdown:
         lines.extend(_section("Score contributors · attributed points"))
         labels = {"vulnerabilities": "Vulnerabilities", "reachability": "Reachable exposure", "maintenance": "Maintenance & package health", "license": "License policy", "dependency_conflicts": "Dependency conflicts"}
@@ -79,7 +84,8 @@ def terminal_report(result: AnalysisResult, show_tree: bool = True) -> str:
             lines.append(f"  {score:>5.1f}  {_short(key)}{top_cvss}{fix_state}")
     if result.parse_warnings: lines.extend(_section("Warnings") + [f"  ⚠ {w}" for w in result.parse_warnings])
     level = _threat_level(data["risk_score"])
-    lines.extend(["", "╔══════════════════════ OVERALL THREAT SCORE ══════════════════════╗", f"║  {data['risk_score']:>5.1f} / 100   ·   {level:<48}║", "╚════════════════════════════════════════════════════════════════════╝"])
+    score_line = f"  {data['risk_score']:>5.1f} / 100   |   {level}"
+    lines.extend(["", f"+{' OVERALL THREAT SCORE ':-^68}+", f"|{score_line:<68}|", border])
     return "\n".join(lines)
 
 
@@ -108,11 +114,15 @@ def _short(value: str) -> str: return value[8:] if value.startswith("generic:") 
 
 
 def _section(title: str) -> list[str]:
-    return ["", f"── {title} " + "─" * max(0, 68 - len(title))]
+    return ["", f"-- {title} " + "-" * max(0, 68 - len(title))]
 
 
 def _severity_badge(severity: str) -> str:
     return f"[{severity.upper():9}]"
+
+
+def _fit(value: str, width: int) -> str:
+    return value if len(value) <= width else value[: width - 1] + "…"
 
 
 def _vulnerability_path_tree(group: dict) -> list[str]:
