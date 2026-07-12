@@ -7,7 +7,11 @@ name = "sbom-risk-analyzer"
 version = "0.1.0"
 description = "A dependency and SBOM risk analyzer CLI"
 requires-python = ">=3.10"
-dependencies = ["networkx>=3.0", "packaging>=23.0"]
+dependencies = [
+  "networkx>=3.0",
+  "packaging>=23.0",
+  "tomli>=2.0; python_version < '3.11'",
+]
 
 [project.scripts]
 sbom-risk = "sbom_risk.cli:main"
