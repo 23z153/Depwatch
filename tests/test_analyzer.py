@@ -538,3 +538,23 @@ def test_npm_dev_dependencies_and_lockfile_redirection(tmp_path):
     assert jest_node is not None
     assert "npm:dep-of-jest@2.0.0" in jest_node["dependsOn"]
 
+
+def test_missing_lockfile_warning(tmp_path):
+    (tmp_path / "package.json").write_text(json.dumps({
+        "name": "test-project",
+        "version": "1.0.0",
+        "dependencies": {
+            "express": "4.17.1"
+        }
+    }))
+    result = analyze(tmp_path)
+    assert any(
+        "No package-lock.json or yarn.lock was found next to package.json" in w
+        for w in result.parse_warnings
+    )
+    assert any(
+        "Instruction: Run 'npm install --package-lock-only' or 'yarn install' in a trusted environment" in w
+        for w in result.parse_warnings
+    )
+
+

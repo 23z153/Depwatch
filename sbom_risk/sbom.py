@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from .discovery import discover_inputs
+from .discovery import discover_inputs, check_missing_lockfile
 from .models import Component
 from .parsers import parse_file
 
@@ -33,6 +33,11 @@ def generate_sbom(project: str | Path, format: SBOMFormat, output: str | Path) -
     if not components:
         detail = f" Warnings: {'; '.join(warnings)}" if warnings else ""
         raise ValueError(f"No supported, parseable manifests were found to generate an SBOM.{detail}")
+    
+    import sys
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+        
     if format == "cyclonedx":
         document = _cyclonedx(project, components, edges)
     elif format == "spdx":
@@ -53,6 +58,7 @@ def _collect(project: Path) -> tuple[dict[str, Component], list[tuple[str, str]]
             continue
         parsed, file_edges, file_warnings = parse_file(input_file)
         warnings.extend(file_warnings)
+        check_missing_lockfile(input_file, warnings)
         for component in parsed:
             previous = components.get(component.key)
             components[component.key] = Component(**(component.__dict__ | {

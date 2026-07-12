@@ -10,7 +10,7 @@ from typing import Any
 
 import networkx as nx
 
-from .discovery import discover_inputs
+from .discovery import discover_inputs, check_missing_lockfile
 from .models import AnalysisResult, Component, Finding
 from .osv import DEFAULT_DB, info as osv_cache_info, records_for_components
 from .parsers import parse_file
@@ -35,6 +35,7 @@ def analyze(project: str | Path, criticality: int = 3, vulnerability_db: str | N
     for input_file in inputs:
         parsed, file_edges, file_warnings = parse_file(input_file)
         warnings.extend(file_warnings)
+        check_missing_lockfile(input_file, warnings)
         for c in parsed:
             old = components.get(c.key)
             components[c.key] = Component(**(c.__dict__ | {"direct": c.direct or (old.direct if old else False), "license": c.license or (old.license if old else None)}))

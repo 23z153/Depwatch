@@ -56,3 +56,52 @@ def discover_inputs(project: Path) -> list[Path]:
         if path.name not in suppressed:
             selected.append(path)
     return sorted(selected, key=lambda p: (str(p.parent), p.name))
+
+
+def check_missing_lockfile(path: Path, warnings: list[str]) -> None:
+    """Check if a bare manifest file is parsed without a corresponding lockfile,
+    and add warning instructions for building lockfiles on trusted environments.
+    """
+    name = path.name.lower()
+    if name == "package.json":
+        lockfile_path1 = path.parent / "package-lock.json"
+        lockfile_path2 = path.parent / "yarn.lock"
+        if not lockfile_path1.is_file() and not lockfile_path2.is_file():
+            warnings.append(
+                "No package-lock.json or yarn.lock was found next to package.json. "
+                "Transitive dependencies cannot be analyzed. "
+                "Instruction: Run 'npm install --package-lock-only' or 'yarn install' in a trusted environment to generate the lockfile."
+            )
+    elif name == "pyproject.toml":
+        lockfile_path = path.parent / "poetry.lock"
+        if not lockfile_path.is_file():
+            warnings.append(
+                "No poetry.lock was found next to pyproject.toml. "
+                "Transitive dependencies cannot be analyzed. "
+                "Instruction: Run 'poetry lock --no-update' in a trusted environment to generate the lockfile."
+            )
+    elif name == "gemfile":
+        lockfile_path = path.parent / "Gemfile.lock"
+        if not lockfile_path.is_file():
+            warnings.append(
+                "No Gemfile.lock was found next to Gemfile. "
+                "Transitive dependencies cannot be analyzed. "
+                "Instruction: Run 'bundle lock' in a trusted environment to generate the lockfile."
+            )
+    elif name == "composer.json":
+        lockfile_path = path.parent / "composer.lock"
+        if not lockfile_path.is_file():
+            warnings.append(
+                "No composer.lock was found next to composer.json. "
+                "Transitive dependencies cannot be analyzed. "
+                "Instruction: Run 'composer update --lock' in a trusted environment to generate the lockfile."
+            )
+    elif name == "go.mod":
+        lockfile_path = path.parent / "go.sum"
+        if not lockfile_path.is_file():
+            warnings.append(
+                "No go.sum was found next to go.mod. "
+                "Transitive dependencies cannot be analyzed. "
+                "Instruction: Run 'go mod tidy' in a trusted environment to generate the lockfile."
+            )
+
