@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import date, datetime, timezone
 from importlib.resources import files
 from itertools import islice
@@ -13,6 +14,7 @@ from .discovery import discover_inputs
 from .models import AnalysisResult, Component, Finding
 from .osv import DEFAULT_DB, info as osv_cache_info, records_for_components
 from .parsers import parse_file
+from .registry_cache import DEFAULT_REGISTRY_DB, load as load_registry_cache, store as store_registry_cache
 
 SEVERITY = {"critical": 10.0, "high": 7.5, "medium": 4.5, "low": 1.5, "unknown": 5.0}
 COPYLEFT = {"GPL-2.0", "GPL-2.0-only", "GPL-3.0", "GPL-3.0-only", "AGPL-3.0", "AGPL-3.0-only", "LGPL-2.1", "LGPL-3.0"}
@@ -25,7 +27,7 @@ def analyze(project: str | Path, criticality: int = 3, vulnerability_db: str | N
             metadata_file: str | None = None, allowed_licenses: set[str] | None = None,
             project_type: str = "proprietary-distributed", vex_file: str | None = None,
             online: bool = False, registry_metadata_online: bool = False,
-            osv_db: str | None = None) -> AnalysisResult:
+            osv_db: str | None = None, registry_db: str | None = None) -> AnalysisResult:
     project = Path(project).resolve(); components: dict[str, Component] = {}; edges: list[tuple[str, str]] = []; warnings = []
     inputs = discover_inputs(project)
     if not inputs:
@@ -89,6 +91,12 @@ def analyze(project: str | Path, criticality: int = 3, vulnerability_db: str | N
 
     # 5. Resolve maintenance
     metadata = _load_json(metadata_file) if metadata_file else {}
+    local_registry = Path(registry_db).expanduser() if registry_db else DEFAULT_REGISTRY_DB
+    cached_registry = load_registry_cache(local_registry, list(components))
+    for key, cache_row in cached_registry.items():
+        local_row = metadata.get(key, {})
+        if not isinstance(local_row, dict): local_row = {"last_release": local_row}
+        metadata[key] = cache_row | local_row
     if registry_metadata_online:
         registry_metadata, registry_warning = _query_registry_metadata(list(components.values()))
         if registry_warning:
@@ -100,6 +108,10 @@ def analyze(project: str | Path, criticality: int = 3, vulnerability_db: str | N
             if not isinstance(local_row, dict):
                 local_row = {"last_release": local_row}
             metadata[key] = registry_row | local_row
+        try:
+            store_registry_cache(local_registry, registry_metadata)
+        except (OSError, sqlite3.Error) as exc:
+            warnings.append(f"Could not update local registry metadata cache ({local_registry}): {exc}")
     unmaintained = _maintenance(components, metadata)
 
     # 6. Resolve licenses
@@ -810,6 +822,7 @@ def _query_registry_metadata(components: list[Component]) -> tuple[dict[str, dic
                         "deprecated": True,
                         "deprecation_reason": str(record["deprecated"]),
                     }, False
+                return component.key, {"deprecated": False}, False
             elif component.ecosystem == "pypi":
                 name = urllib.parse.quote(component.name, safe="")
                 version = urllib.parse.quote(component.version, safe="")
@@ -822,6 +835,7 @@ def _query_registry_metadata(components: list[Component]) -> tuple[dict[str, dic
                         "deprecated": True,
                         "deprecation_reason": str(info.get("yanked_reason") or "Release is yanked on PyPI."),
                     }, False
+                return component.key, {"deprecated": False}, False
             return component.key, None, False
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, OSError, json.JSONDecodeError):
             return component.key, None, True

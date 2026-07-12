@@ -8,6 +8,7 @@ from .reporting import export, global_report, terminal_report
 from .dashboard import serve
 from .sbom import ensure_sbom
 from .osv import DEFAULT_DB, DEFAULT_ECOSYSTEMS, info as osv_info, sync_osv
+from .registry_cache import DEFAULT_REGISTRY_DB, info as registry_info
 
 SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 
@@ -16,11 +17,14 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "sync-osv":
         return _sync_osv_main(argv[1:])
+    if argv and argv[0] == "sync-registry":
+        return _sync_registry_main(argv[1:])
     parser = argparse.ArgumentParser(
         prog="sbom-risk",
-        usage="%(prog)s [OPTIONS] PROJECT [PROJECT ...]\n       %(prog)s sync-osv [SYNC OPTIONS]",
+        usage="%(prog)s [OPTIONS] PROJECT [PROJECT ...]\n       %(prog)s sync-osv [SYNC OPTIONS]\n       %(prog)s sync-registry [SYNC OPTIONS] PROJECT [PROJECT ...]",
         description="Analyze project dependencies and CycloneDX/SPDX SBOMs.",
         epilog="Local OSV cache: sbom-risk sync-osv --ecosystem npm --ecosystem PyPI\n"
+               "Registry cache: sbom-risk sync-registry PROJECT\n"
                "Offline scan: sbom-risk PROJECT --no-registry-metadata",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -32,10 +36,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project-type", choices=["proprietary-distributed", "proprietary-internal", "open-source"], default="proprietary-distributed", help="Project type context for copyleft license analysis")
     parser.add_argument("--vex", help="Path to VEX overrides JSON file")
     parser.add_argument("--osv-db", default=str(DEFAULT_DB), help="Local OSV SQLite cache (default: ~/.cache/sbom-risk/osv.sqlite3)")
+    parser.add_argument("--registry-db", default=str(DEFAULT_REGISTRY_DB), help="Local npm/PyPI metadata cache (default: ~/.cache/sbom-risk/registry.sqlite3)")
     parser.add_argument("--online", action="store_true", help="Query OSV directly (sends package names and versions; local cache is preferred)")
     registry_group = parser.add_mutually_exclusive_group()
-    registry_group.add_argument("--registry-metadata", dest="registry_metadata", action="store_true", default=True, help="Query npm and PyPI for deprecated or yanked versions (default)")
-    registry_group.add_argument("--no-registry-metadata", dest="registry_metadata", action="store_false", help="Skip registry checks; useful for offline/private scans")
+    registry_group.add_argument("--registry-metadata", dest="registry_metadata", action="store_true", default=False, help="Refresh npm/PyPI metadata live, then update the local cache")
+    registry_group.add_argument("--no-registry-metadata", dest="registry_metadata", action="store_false", help="Do not make live registry requests (default; cached metadata is still used)")
     parser.add_argument("--generate-sbom", choices=["cyclonedx", "spdx"], help="Generate an SBOM when none exists, then analyze it")
     parser.add_argument("--sbom-output", help="Where to write a generated SBOM (one project only)")
     parser.add_argument("--fail-on-severity", choices=SEVERITY_RANK, help="Exit with status 1 when a finding meets this severity (for CI)")
@@ -58,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     options = {"criticality": args.criticality, "vulnerability_db": args.vuln_db, "metadata_file": args.metadata,
                "allowed_licenses": set(args.allow_license) if args.allow_license else None, "project_type": args.project_type,
                "vex_file": args.vex, "online": args.online, "registry_metadata_online": args.registry_metadata,
-               "osv_db": args.osv_db}
+               "osv_db": args.osv_db, "registry_db": args.registry_db}
     scan_projects = args.projects
     if args.generate_sbom:
         scan_projects = []
@@ -118,6 +123,33 @@ def _sync_osv_main(argv: list[str]) -> int:
         print(f"error: OSV sync failed: {exc}", file=sys.stderr)
         return 2
     print(f"OSV local cache ready: {args.osv_db} ({sum(counts.values()):,} affected-package records)")
+    return 0
+
+
+def _sync_registry_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="sbom-risk sync-registry", description="Fetch npm/PyPI deprecation and yanked-release metadata for project dependencies into a local cache.")
+    parser.add_argument("projects", nargs="*", help="Project directories, manifests, or SBOM files")
+    parser.add_argument("--registry-db", default=str(DEFAULT_REGISTRY_DB), help="Local SQLite destination")
+    parser.add_argument("--status", action="store_true", help="Show cache metadata without syncing")
+    args = parser.parse_args(argv)
+    if args.status:
+        metadata = registry_info(args.registry_db)
+        print(f"Registry cache: {args.registry_db}\n" + ("\n".join(f"{k}: {v}" for k, v in metadata.items()) if metadata else "not yet synced"))
+        return 0
+    if not args.projects:
+        parser.error("at least one project is required unless --status is used")
+    from .analyzer import _query_registry_metadata
+    from .registry_cache import store as store_registry_cache
+    for project in args.projects:
+        try:
+            result = analyze(project, registry_metadata_online=False, registry_db=args.registry_db)
+            metadata, warning = _query_registry_metadata(result.components)
+            store_registry_cache(args.registry_db, metadata)
+            print(f"Synced registry metadata for {len(metadata)} component(s): {project}")
+            if warning: print(f"warning: {warning}", file=sys.stderr)
+        except (OSError, ValueError) as exc:
+            print(f"error: {project}: {exc}", file=sys.stderr)
+            return 2
     return 0
 
 

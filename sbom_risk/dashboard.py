@@ -194,3 +194,53 @@ function selectSystem(i){active=i;render();show('graphview')}function playbook(p
 function graph(p){const svg=$('#graph'),all=[{id:'ROOT',name:'Root',version:'',direct:false},...p.components],by=Object.fromEntries(all.map(n=>[n.id,n])),parents={};p.dependencies.forEach(e=>(parents[e.to]??=[]).push(e.from));const risky=new Set((p.vulnerabilities||[]).filter(f=>f.exploitability!=='suppressed').map(f=>f.component));const focused=all.length>70&&risky.size>0,keep=new Set(['ROOT']);if(focused){for(const id of risky){let stack=[id],seen=new Set;while(stack.length){const n=stack.pop();if(seen.has(n))continue;seen.add(n);keep.add(n);(parents[n]||[]).forEach(x=>stack.push(x));}}for(const n of all)if(n.direct)keep.add(n.id)}else all.forEach(n=>keep.add(n.id));const nodes=all.filter(n=>keep.has(n.id)),edges=p.dependencies.filter(e=>keep.has(e.from)&&keep.has(e.to));const children={};edges.forEach(e=>(children[e.from]??=[]).push(e.to));const depth={ROOT:0},queue=['ROOT'];while(queue.length){const from=queue.shift();for(const to of children[from]||[]){const next=depth[from]+1;if(depth[to]===undefined||next<depth[to]){depth[to]=next;queue.push(to)}}}for(const n of nodes)if(depth[n.id]===undefined)depth[n.id]=0;const levels={};nodes.forEach(n=>(levels[depth[n.id]]??=[]).push(n));const maxDepth=Math.max(...Object.values(depth)),maxRows=Math.max(...Object.values(levels).map(x=>x.length)),w=Math.max(900,180+(maxDepth+1)*220),h=Math.max(430,110+maxRows*72),clip=(s,n)=>s.length>n?s.slice(0,n-1)+'…':s,display=n=>{if(n.id==='ROOT')return 'ROOT';let name=n.name||n.id;if(n.ecosystem==='maven'&&name.includes(':'))name=name.split(':').pop();return clip(name,20)};Object.entries(levels).forEach(([d,list])=>list.forEach((n,i)=>{n.x=70+Number(d)*220;n.y=55+(i+1)*h/(list.length+1)}));svg.style.minWidth=w+'px';svg.style.height=h+'px';svg.setAttribute('viewBox',`0 0 ${w} ${h}`);svg.innerHTML='';edges.forEach(e=>{const a=by[e.from],b=by[e.to];if(a&&b)svg.innerHTML+=`<line class="edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`});nodes.forEach(n=>{const kind=n.id==='ROOT'?'root':n.direct?'direct':'transitive',name=display(n),version=n.id==='ROOT'?'':clip(n.version||'',14),isRisk=risky.has(n.id);svg.innerHTML+=`<g class="node" onclick="showNode('${encodeURIComponent(n.id)}')"><circle class="${kind}" cx="${n.x}" cy="${n.y}" r="${isRisk?16:13}"/><text text-anchor="middle" style="font-weight:${isRisk?750:650}" x="${n.x}" y="${n.y+31}"><tspan x="${n.x}">${esc(name)}</tspan>${version?`<tspan x="${n.x}" dy="13" style="font-size:10px;fill:#667085;font-weight:500">${esc(version)}</tspan>`:''}</text></g>`});const project=p.project.split('/').filter(Boolean).pop()||p.project;$('#graph-title').textContent=`${focused?'Risk-focused dependency graph':'Dependency graph'} · ${project}`;$('#graph-count').textContent=focused?`${nodes.length} of ${all.length-1} components shown`:`${p.summary.components} components`}
 function showNode(id){id=decodeURIComponent(id);const p=data.projects[active],item=(p.playbook||[]).find(x=>x.component===id);$('#selected').innerHTML=item?`<b>${esc(item.component)}</b>${item.steps.map((s,i)=>`<div class="step"><b>${i+1}</b><span>${esc(s)}</span></div>`).join('')}`:`<b>${esc(id)}</b><br><span class="system-meta">No active remediation action for this component.</span>`}load();setInterval(load,5000);
 </script></body></html>'''
+
+# Kept separate from the core dashboard template so usability enhancements
+# remain small and do not alter the local HTTP/API surface.
+_HTML = _HTML.replace("</body>", r'''<style>
+.dashboard-tools{display:flex;gap:8px;align-items:center;position:relative;flex-wrap:wrap}.dashboard-search{width:245px;border:1px solid #d0d5dd;border-radius:8px;padding:9px 11px;background:#fff;color:#172033;font:inherit;outline:none}.dashboard-search:focus{border-color:#2563eb;box-shadow:0 0 0 3px #eaf0ff}.search-menu{position:absolute;right:0;top:42px;z-index:10;width:320px;max-height:300px;overflow:auto;background:#fff;border:1px solid #d0d5dd;border-radius:9px;box-shadow:0 12px 24px #10182824}.search-menu button{display:block;width:100%;padding:9px 11px;text-align:left;border:0;border-bottom:1px solid #f2f4f7;background:#fff;color:#172033;cursor:pointer;font:inherit}.search-menu button:hover{background:#f4f7ff}.search-menu small{display:block;color:#667085;margin-top:2px}.focus-note{margin:0 0 12px;padding:9px 12px;border-left:3px solid #2563eb;border-radius:0 7px 7px 0;background:#eef4ff;color:#1849a9;font-size:12px}.queue-filter{width:210px}.play.is-hidden{display:none}.system-meta{line-height:1.5}.panel{scroll-margin-top:18px}@media(max-width:800px){.dashboard-search{width:100%}.dashboard-tools{width:100%}.search-menu{left:0;right:auto;width:100%}}
+</style><script>
+(() => {
+  const graphPanel = document.querySelector('#graph-title')?.closest('.panel');
+  const graphHead = graphPanel?.querySelector('.panelhead');
+  if (!graphPanel || !graphHead) return;
+
+  const tools = document.createElement('div');
+  tools.className = 'dashboard-tools';
+  tools.innerHTML = '<input id="quick-component-search" class="dashboard-search" type="search" placeholder="Quick component search  ( / )" aria-label="Quick component search" autocomplete="off"><div id="quick-component-results" class="search-menu" hidden></div>';
+  graphHead.appendChild(tools);
+  const search = tools.querySelector('input');
+  const menu = tools.querySelector('.search-menu');
+  const note = document.createElement('p');
+  note.className = 'focus-note';
+  note.textContent = 'Large projects use a risk-focused graph: vulnerable components, their paths to ROOT, and direct dependencies are shown first. Use search to inspect any component.';
+  graphPanel.querySelector('.graph-wrap').before(note);
+
+  function currentProject(){ return (typeof data !== 'undefined' && data.projects) ? data.projects[active] : null; }
+  function clearMenu(){ menu.hidden = true; menu.innerHTML = ''; }
+  function findComponents(){
+    const query = search.value.trim().toLowerCase();
+    const project = currentProject();
+    if (!query || !project) return clearMenu();
+    const matches = project.components.filter(component => `${component.name} ${component.version} ${component.id}`.toLowerCase().includes(query)).slice(0, 12);
+    if (!matches.length){ menu.innerHTML = '<button disabled>No matching components</button>'; menu.hidden = false; return; }
+    menu.innerHTML = matches.map(component => `<button data-id="${encodeURIComponent(component.id)}"><strong>${esc(component.name)}</strong><small>${esc(component.version)} · ${esc(component.ecosystem)}</small></button>`).join('');
+    menu.hidden = false;
+    menu.querySelectorAll('button[data-id]').forEach(button => button.onclick = () => { show('graphview'); showNode(button.dataset.id); clearMenu(); });
+  }
+  search.addEventListener('input', findComponents);
+  search.addEventListener('keydown', event => { if (event.key === 'Escape') { search.value = ''; clearMenu(); search.blur(); } });
+  document.addEventListener('keydown', event => { if (event.key === '/' && document.activeElement?.tagName !== 'INPUT') { event.preventDefault(); search.focus(); } });
+  document.addEventListener('click', event => { if (!tools.contains(event.target)) clearMenu(); });
+
+  const queue = document.querySelector('#playbook');
+  const queueHead = queue?.closest('.panel')?.querySelector('.panelhead');
+  if (queue && queueHead) {
+    const filter = document.createElement('input');
+    filter.className = 'dashboard-search queue-filter';
+    filter.type = 'search'; filter.placeholder = 'Filter remediation queue'; filter.setAttribute('aria-label', 'Filter remediation queue');
+    queueHead.appendChild(filter);
+    filter.addEventListener('input', () => { const query = filter.value.toLowerCase(); queue.querySelectorAll('.play').forEach(item => item.classList.toggle('is-hidden', !!query && !item.textContent.toLowerCase().includes(query))); });
+  }
+})();
+</script></body>''')

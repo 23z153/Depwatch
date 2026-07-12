@@ -85,6 +85,9 @@ sbom-risk /path/to/project
 # Scan without registry network lookups
 sbom-risk /path/to/project --no-registry-metadata
 
+# Fetch npm/PyPI deprecation metadata once, then reuse it locally
+sbom-risk sync-registry /path/to/project
+
 # Scan several projects and print an aggregate terminal summary
 sbom-risk service-a service-b --no-registry-metadata
 
@@ -164,11 +167,25 @@ sbom-risk . --vuln-db company-vulnerabilities.json
 
 ## Privacy and network behavior
 
+### Choose the right scan mode
+
+Sending package names and versions to the OSV API is a normal vulnerability-scanning workflow and is often acceptable for public open-source projects. However, it can reveal your technology stack, exact dependency versions, scan timing, and source IP address. That metadata may be sensitive for private products, regulated environments, pre-release software, or internal infrastructure.
+
+| Situation | Recommended command | What leaves the machine |
+| --- | --- | --- |
+| Public project; latest OSV results are more important than inventory privacy | `sbom-risk . --online` | Package names and versions are sent to OSV. |
+| Private project; local advisory matching is preferred | `sbom-risk sync-osv --ecosystem npm --ecosystem PyPI`, then `sbom-risk . --no-registry-metadata` | Nothing during the scan. The explicit sync only downloads public OSV archive data. |
+| Private project; deprecation/yanked-release data is acceptable | `sbom-risk sync-registry .`, then `sbom-risk .` | Package names and versions are sent to npm/PyPI during the explicit sync, not during ordinary scans. |
+
+Use `--online` only when you accept the OSV API disclosure. The local-cache workflow is the recommended default for sensitive projects.
+
 | Operation | Network behavior |
 | --- | --- |
 | `sync-osv` | Downloads public OSV archive data only; no project inventory is uploaded. |
-| Normal scan | Uses the local OSV cache for vulnerabilities. By default it queries npm/PyPI for deprecation or yanked-release metadata. |
-| `--no-registry-metadata` | Disables npm/PyPI registry lookups. |
+| Normal scan | Uses local OSV and registry metadata caches. It makes no registry request by default. |
+| `sync-registry` | Explicitly fetches npm/PyPI deprecation or yanked-release metadata for a project's exact dependencies. |
+| `--registry-metadata` | Performs a live npm/PyPI refresh during this scan and updates the local cache. |
+| `--no-registry-metadata` | Explicitly disables live registry refresh (the default); cached metadata is still used. |
 | `--online` | Sends package names and versions to the OSV API. |
 | Dashboard | Binds to `127.0.0.1` only; it does not publish project data to a remote service. |
 
@@ -178,7 +195,14 @@ For the most private local scan after an OSV sync:
 sbom-risk . --no-registry-metadata
 ```
 
-Registry checks are concurrent and identify npm deprecations and PyPI yanked releases. They do not run package-manager commands.
+Sync registry metadata explicitly when you need fresh deprecation/yank signals:
+
+```bash
+sbom-risk sync-registry /path/to/project
+sbom-risk sync-registry --status
+```
+
+Registry fetches are concurrent and identify npm deprecations and PyPI yanked releases. They do not run package-manager commands. Ordinary scans reuse the resulting local cache.
 
 ## SBOM generation
 
