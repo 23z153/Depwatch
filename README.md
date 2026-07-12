@@ -7,7 +7,7 @@ It builds a directed dependency graph with NetworkX, resolves direct and transit
 ## Highlights
 
 - Scan one or many projects independently from the terminal.
-- Parse npm, PyPI, Maven, Go, Rust, CycloneDX JSON, and SPDX JSON inputs.
+- Parse npm (package-lock.json, yarn.lock), PyPI (poetry.lock, Pipfile.lock, requirements.txt), Maven (pom.xml), Go (go.mod, go.sum), Rust (Cargo.lock), Ruby (Gemfile.lock), PHP (composer.lock), CycloneDX JSON, and SPDX JSON inputs.
 - Sync OSV public advisory archives into a local SQLite cache; normal vulnerability scans do not send the project dependency inventory to OSV.
 - Show vulnerable dependency paths, grouped component advisories, reachability signals, upgrade guidance, and no-patch/manual-remediation packages.
 - Detect version conflicts, diamond dependencies, license-policy issues, deprecation/yanked releases, stale/abandoned components, bus-factor concerns, and missing security-policy metadata.
@@ -103,16 +103,18 @@ sbom-risk sync-osv --help
 
 | Ecosystem | Inputs |
 | --- | --- |
-| npm / Node.js | `package-lock.json`, `npm-shrinkwrap.json`, `package.json` |
+| npm / Node.js | `package-lock.json`, `npm-shrinkwrap.json`, `package.json`, `yarn.lock` |
 | Python / PyPI | `requirements.txt`, `poetry.lock`, `pyproject.toml`, `Pipfile.lock` |
 | Maven / Java | `pom.xml` |
 | Go | `go.mod` |
 | Rust / crates.io | `Cargo.lock` |
+| Ruby / RubyGems | `Gemfile.lock`, `Gemfile` |
+| PHP / Composer | `composer.lock`, `composer.json` |
 | SBOMs | `*.cdx.json`, `*.cyclonedx.json`, `*.spdx.json` |
 
 When a resolved lockfile and a source manifest coexist, the resolved lockfile is preferred where applicable. npm graph resolution follows Node's nearest-`node_modules` lookup and does not treat a hoisted transitive dependency as direct merely because it is installed at the root.
 
-Native parsers and local OSV sync currently cover npm, PyPI, Maven, Go, and crates.io. RubyGems, Composer/Packagist, NuGet, and other ecosystems are not yet natively parsed.
+Native parsers and local OSV sync currently cover npm, PyPI, Maven, Go, crates.io, RubyGems, and Composer/Packagist. NuGet and other ecosystems are not yet natively parsed.
 
 ## Local OSV vulnerability database
 
@@ -215,7 +217,8 @@ sbom-risk . --generate-sbom spdx --sbom-output /tmp/project.spdx.json
 
 Generation is dependency-free: it reads local inputs and does not install dependencies, execute builds, or invoke package managers. If a supported SBOM is already present, it is reused. Generated default files are `sbom.cdx.json` and `sbom.spdx.json`.
 
-Use SBOM generation when you need a portable audit artifact or want to feed the same dependency inventory into another tool. For a normal local scan, scanning the lockfile directly is sufficient.
+* **Lockfile Redirection**: If explicitly pointed to a bare manifest file (e.g., `package.json`), the tool automatically checks for and parses a corresponding lockfile next to it (e.g., `package-lock.json` or `yarn.lock`) to ensure the full transitive dependency graph is recorded.
+* **Metadata Component Rooting**: Generated CycloneDX SBOMs include a `metadata.component` entry with `bom-ref: "ROOT"`, ensuring that the dependency graph roots correctly and is fully compliant with standard SBOM readers and validators.
 
 ## Findings and remediation
 
@@ -332,15 +335,14 @@ sbom-risk service-a service-b --serve
 sbom-risk . --no-registry-metadata --serve --no-browser
 ```
 
-The dashboard starts on `http://127.0.0.1:8765` by default and refreshes every 10 seconds. If that port is busy, it automatically selects the next available port. Use `--port` and `--refresh-seconds` to control it.
+The dashboard starts on `http://127.0.0.1:8765` by default and refreshes every 5 seconds. If that port is busy, it automatically selects the next available port. Use `--port` to control it.
 
 It provides:
 
-- an overview of scanned systems and highest risk;
-- a risk-focused hierarchical dependency graph for large projects (vulnerable paths and direct dependencies rather than an unreadable full-node grid);
-- a remediation queue ordered by risk and patch availability;
-- shared-risk correlation across projects; and
-- repeated risk-pattern clustering.
+- **Interactive Dependency Graph**: Render the full transitive dependency tree with zoom/pan and node inspection. Click any component (or search it using `/`) to display its exact dependency paths from `ROOT`. Large projects highlight risky paths while keeping transitive subtrees traversable.
+- **Actionable Remediation Playbook**: A queue sorted by risk and patch availability, showing the exact dependency paths of every vulnerable component so you know which package introduced it.
+- **Shared Risks & Cluster Analysis**: Cross-project correlations showing components shared across systems, alongside repeated category risk patterns.
+- **Real-Time Scanning**: Automatically rescans the workspace for change detection.
 
 ## CI and automation
 
